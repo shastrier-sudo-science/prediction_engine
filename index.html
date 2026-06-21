@@ -1389,6 +1389,8 @@ Large files (1000+ rows) are parsed in chunks."></textarea>
           <div><div style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-light);text-transform:uppercase;">Years to Freedom</div><div id="fc-years" style="font-size:1.3rem;font-weight:700;color:var(--green);">—</div></div>
         </div>
       </div>
+      <div id="horizon-banner" style="border:1px solid var(--border);border-radius:8px;padding:1rem 1.25rem;margin:1.5rem 0;background:var(--card);display:none;"></div>
+
       <div class="section-header" style="margin-top:2rem">
         <h2>Scenario Forecasts</h2>
         <p>Three possible outcomes</p>
@@ -2447,6 +2449,23 @@ function renderOutput() {
   }
 
   // Scenarios
+  // Forecast Horizon
+  const hbPanel = document.getElementById('horizon-banner');
+  if (hbPanel) {
+    const hm = result.horizonMeta;
+    if (hm && !hm.error) {
+      hbPanel.style.display = 'block';
+      hbPanel.innerHTML =
+        '<div style="font-family:var(--font-mono);font-size:0.65rem;color:var(--gold);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:0.5rem;">🎯 Forecast Horizon</div>' +
+        '<div style="font-size:0.95rem;color:var(--text);">This forecast targets <strong style="color:var(--gold)">' + hm.targetDate + '</strong> (' +
+        hm.horizonLabel + ' &middot; detected cadence: ' + hm.frequency + ')</div>';
+    } else {
+      hbPanel.style.display = 'block';
+      hbPanel.innerHTML = '<div style="font-size:0.85rem;color:var(--text-light);">⚠️ No date column assigned to your data, showing step count only. Go back to the Clean step and set a column\'s role to "Date" to see a real target date here.</div>';
+    }
+  }
+
+  // Scenarios
   const sp = document.getElementById('scenario-panel');
   if (sp && result.scenarios) {
     const scenarioLabels = {
@@ -2470,12 +2489,16 @@ function renderOutput() {
         const arrow = pct >= 0 ? '▲' : '▼';
         changeHtml = '<div class="scenario-change ' + changeCls + '">' + arrow + ' ' + Math.abs(pct) + '% from last</div>';
       }
+      const horizonNote = (result.horizonMeta && !result.horizonMeta.error)
+        ? '<div class="scenario-change" style="opacity:0.7;">by ' + result.horizonMeta.targetDate + '</div>'
+        : '';
       return '<div class="scenario-card ' + cls + '">' +
         '<div class="scenario-icon">' + meta.icon + '</div>' +
         '<div class="scenario-name">' + meta.label + '</div>' +
         '<div class="scenario-value">' + formatNumber(s.value) + '</div>' +
         '<div class="scenario-desc">' + meta.desc + '</div>' +
         changeHtml +
+        horizonNote +
       '</div>';
     }).join('');
   }
@@ -2503,6 +2526,55 @@ function renderOutput() {
   drawHistogram(result);
 }
 
+
+// ============================================================
+// FORECAST HORIZON — maps abstract "steps" to a real calendar
+// target date by detecting data cadence from the date column's
+// median gap (daily/weekly/monthly/yearly). Fixes the original
+// bug where config.steps was used to run the model but never
+// converted into a date the user could see. See audit notes
+// 2026-06-21.
+// ============================================================
+function computeHorizonMeta(dates, steps) {
+  try {
+    if (!Array.isArray(dates) || dates.length < 2 || !steps || steps < 1) {
+      return { targetDate: null, horizonLabel: 'Unknown horizon', frequency: 'unknown', error: true };
+    }
+    const parsed = dates
+      .map(d => new Date(d))
+      .filter(d => !isNaN(d.getTime()))
+      .sort((a, b) => a - b);
+    if (parsed.length < 2) {
+      return { targetDate: null, horizonLabel: 'Unknown horizon', frequency: 'unknown', error: true };
+    }
+    const gapsDays = [];
+    for (let i = 1; i < parsed.length; i++) {
+      gapsDays.push((parsed[i] - parsed[i - 1]) / 86400000);
+    }
+    gapsDays.sort((a, b) => a - b);
+    const mid = Math.floor(gapsDays.length / 2);
+    const medianGap = gapsDays.length % 2 === 0
+      ? (gapsDays[mid - 1] + gapsDays[mid]) / 2
+      : gapsDays[mid];
+    let frequency, label;
+    if (medianGap <= 1.5) { frequency = 'daily'; label = 'day'; }
+    else if (medianGap <= 9) { frequency = 'weekly'; label = 'week'; }
+    else if (medianGap <= 45) { frequency = 'monthly'; label = 'month'; }
+    else { frequency = 'yearly'; label = 'year'; }
+    const anchor = parsed[parsed.length - 1];
+    const targetDate = new Date(anchor);
+    if (frequency === 'daily') targetDate.setDate(targetDate.getDate() + steps);
+    else if (frequency === 'weekly') targetDate.setDate(targetDate.getDate() + steps * 7);
+    else if (frequency === 'monthly') targetDate.setMonth(targetDate.getMonth() + steps);
+    else targetDate.setFullYear(targetDate.getFullYear() + steps);
+    const dateStr = targetDate.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    const anchorStr = anchor.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    const horizonLabel = steps + ' ' + label + (steps === 1 ? '' : 's') + ' from ' + anchorStr;
+    return { targetDate: dateStr, horizonLabel: horizonLabel, frequency: frequency, anchorDate: anchorStr, error: false };
+  } catch (err) {
+    return { targetDate: null, horizonLabel: 'Horizon calculation failed', frequency: 'unknown', error: true };
+  }
+}
 
 // ============================================================
 // SIMULATION ENGINE
@@ -2546,6 +2618,13 @@ async function runSimulation() {
   }
 
   result.modelName = modelName;
+
+  const dateColName = ds.roles.date;
+  const dateValues = dateColName
+    ? ds.rows.map(r => r[dateColName]).filter(v => v !== undefined && v !== null && v !== '')
+    : [];
+  result.horizonMeta = computeHorizonMeta(dateValues, config.steps || 30);
+
   AppState.result = result;
   saveState();
 
