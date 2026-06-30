@@ -1087,14 +1087,13 @@
   <div class="pro-banner">
     <h3>🚀 Unlock Pro Features</h3>
     <p>Get real-time WebSocket feeds, unlimited forecasts, portfolio tracking, and priority support.</p>
-    // In your HTML, update the pro-banner:
-<div class="pro-features">
-  <span>✅ Real-time market data</span>
-  <span>✅ Unlimited forecasts</span>
-  <span>✅ Export reports (CSV)</span>
-  <span>✅ Priority email support</span>
-  <span>✅ Early access to new models</span>
-</div>
+    <div class="pro-features">
+      <span>✅ Real-time data</span>
+      <span>✅ Unlimited forecasts</span>
+      <span>✅ Portfolio tracker</span>
+      <span>✅ Export reports</span>
+      <span>✅ Priority support</span>
+    </div>
     <button class="btn btn-gold" onclick="goPro()">Upgrade to Pro — $9/mo</button>
   </div>
 
@@ -1508,7 +1507,7 @@ const CONFIG = {
   COINGECKO_BASE: 'https://api.coingecko.com/api/v3',
   FEAR_GREED_API: 'https://api.alternative.me/fng/?limit=1',
   // PayPal Subscription — replace P-YOUR_PLAN_ID_HERE with your actual Plan ID
-  PRO_PAYMENT_URL: 'https://www.paypal.com/webapps/billing/plans/subscribe?plan_id=P-92G300218L126842ANJB7CGY',
+  PRO_PAYMENT_URL: 'https://www.paypal.com/webapps/billing/plans/subscribe?plan_id=P-YOUR_PLAN_ID_HERE',
   // Verify this is your current $27 bundle landing page
   BOOK_URL: 'https://www.amazon.com/Hacking-Your-Mindset-possibilities-self-motivate-ebook/dp/B0CS9X3Q3K',
   FORMSPREE_ID: 'xvznbvaq',
@@ -1520,20 +1519,30 @@ const CONFIG = {
   REFRESH_INTERVAL: 120000,
   // Supabase config — fill these in after creating your project
   SUPABASE_URL: 'https://fqqnmpucupszsnmioefn.supabase.co',
-  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxcW5tcHVjdXBzenNubWlvZWZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4MjczNDksImV4cCI6MjA5ODQwMzM0OX0.59FabaneITerKSquooPvOaQxLvjUijrn6BgChGxe6Tk'
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxcW5tcHVjdXBzenNubWlvZWZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA5MTY4MDAsImV4cCI6MjA2NjQ5MjgwMH0.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZxcW5tcHVjdXBzenNubWlvZWZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTA5MTY4MDAsImV4cCI6MjA2NjQ5MjgwMH0'
 };
 
 // Supabase client
-let supabase = null;
-if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY && 
-    CONFIG.SUPABASE_URL !== 'https://YOUR_PROJECT.supabase.co') {
-  supabase = supabaseJs.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+let supabaseClient = null;
+try {
+  // Check if Supabase CDN loaded (exposes window.supabase or window.supabaseJs)
+  const supabaseLib = typeof supabase !== 'undefined' ? supabase : 
+                      typeof supabaseJs !== 'undefined' ? supabaseJs : null;
+  if (supabaseLib && CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY && 
+      CONFIG.SUPABASE_URL !== 'https://YOUR_PROJECT.supabase.co') {
+    supabaseClient = supabaseLib.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+    console.log('ForecastOS: Supabase connected');
+  } else {
+    console.warn('ForecastOS: Supabase not configured or CDN not loaded');
+  }
+} catch (e) {
+  console.error('ForecastOS: Supabase init failed:', e);
 }
 
 // --- Supabase Helper Functions ---
 async function insertEmail(email, source, ip = null) {
-  if (!supabase) return;
-  const { error } = await supabase.rpc('insert_email', {
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.rpc('insert_email', {
     p_email: email,
     p_source: source,
     p_ip_address: ip
@@ -1542,16 +1551,16 @@ async function insertEmail(email, source, ip = null) {
 }
 
 async function logEvents(eventsArray) {
-  if (!supabase) return;
-  const { error } = await supabase.rpc('log_events', {
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.rpc('log_events', {
     p_events: eventsArray
   });
   if (error) console.error('logEvents failed', error);
 }
 
 async function createDraftToken(draftData) {
-  if (!supabase) throw new Error('Supabase not configured');
-  const { data, error } = await supabase.rpc('create_draft_token', {
+  if (!supabaseClient) throw new Error('Supabase not configured');
+  const { data, error } = await supabaseClient.rpc('create_draft_token', {
     p_draft_data: draftData
   });
   if (error) throw error;
@@ -1559,8 +1568,8 @@ async function createDraftToken(draftData) {
 }
 
 async function getDraftByToken(token) {
-  if (!supabase) throw new Error('Supabase not configured');
-  const { data, error } = await supabase.rpc('get_draft_by_token', {
+  if (!supabaseClient) throw new Error('Supabase not configured');
+  const { data, error } = await supabaseClient.rpc('get_draft_by_token', {
     p_token: token
   });
   if (error) throw error;
@@ -1568,8 +1577,8 @@ async function getDraftByToken(token) {
 }
 
 async function getPreferences(userId, secret) {
-  if (!supabase) throw new Error('Supabase not configured');
-  const { data, error } = await supabase.rpc('get_preferences', {
+  if (!supabaseClient) throw new Error('Supabase not configured');
+  const { data, error } = await supabaseClient.rpc('get_preferences', {
     p_user_id: userId,
     p_secret: secret
   });
@@ -1578,8 +1587,8 @@ async function getPreferences(userId, secret) {
 }
 
 async function upsertPreferences(userId, secret, prefs) {
-  if (!supabase) return;
-  const { error } = await supabase.rpc('upsert_preferences', {
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.rpc('upsert_preferences', {
     p_user_id: userId,
     p_secret: secret,
     p_preferences: prefs
@@ -3444,7 +3453,7 @@ function loadState() {
 
 
 async function migrateLocalStorageToSupabase() {
-  if (!supabase) return;
+  if (!supabaseClient) return;
   if (localStorage.getItem('supabase_migrated') === 'true') return;
 
   // Generate anonymous identity if missing
